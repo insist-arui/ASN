@@ -35,5 +35,5 @@ train.sh
 configs/*.yaml
 ```
 
-
+If you want to change the parameters of ASN, please edit the `timesformer/config/defaults.py` file.
 
