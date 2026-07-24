@@ -53,4 +53,4 @@ DATA_LOADER:
 NUM_GPUS: 1
 NUM_SHARDS: 1
 RNG_SEED: 1
-OUTPUT_DIR: ./output/FX_10/710-warm5-SOC-b8-soc-seed1-unlabel2-socgai1-512-tiaozheng-2
+OUTPUT_DIR: ./output/FX_10
