@@ -1,0 +1,56 @@
+TRAIN:
+  ENABLE: True
+  DATASET: Multisample
+  BATCH_SIZE: 8
+  EVAL_PERIOD: 32
+  CHECKPOINT_PERIOD: 5
+  AUTO_RESUME: True
+  GAMMA: 0.3
+  WARM_EPOCH: 5
+  BETA: 20
+  GAMMA1: 2
+  GAMMA2: 2
+  EMA: 0.9999
+DATA:
+  PATH_TO_DATA_DIR: ./dataset/finegym/FX_10
+  PATH_PREFIX: ./dataset
+  NUM_FRAMES: 8
+  SAMPLING_RATE: 8
+  TARGET_FPS: 30
+  TRAIN_JITTER_SCALES: [256, 320]
+  TRAIN_CROP_SIZE: 224
+  TEST_CROP_SIZE: 224
+  INPUT_CHANNEL_NUM: [3]
+  SAMPLE_FRAMES: [2, 2, 4]
+TIMESFORMER:
+  ATTENTION_TYPE: 'divided_space_time'
+  PRETRAIN_PATH: './vit.pth'
+SOLVER:
+  BASE_LR: 0.005
+  LR_POLICY: steps_with_relative_lrs
+  STEPS: [0, 25, 28]
+  LRS: [1, 0.1, 0.01]
+  MAX_EPOCH: 30
+  MOMENTUM: 0.9
+  WEIGHT_DECAY: 1e-3
+  OPTIMIZING_METHOD: sgd
+MODEL:
+  MODEL_NAME: multi_granular_vit
+  MODEL_TYPE: base
+  NUM_CLASSES: 35
+  ARCH: vit
+  LOSS_FUNC: cross_entropy
+  DROPOUT_RATE: 0.5
+TEST:
+  ENABLE: True
+  DATASET: Multisample
+  BATCH_SIZE: 32
+  NUM_ENSEMBLE_VIEWS: 5
+  NUM_SPATIAL_CROPS: 3
+DATA_LOADER:
+  NUM_WORKERS: 8
+  PIN_MEMORY: True
+NUM_GPUS: 1
+NUM_SHARDS: 1
+RNG_SEED: 1
+OUTPUT_DIR: ./output/FX_10/710-warm5-SOC-b8-soc-seed1-unlabel2-socgai1-512-tiaozheng-2
