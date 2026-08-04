@@ -23,7 +23,7 @@ from timesformer.models import build_model
 from timesformer.utils.meters import TrainMeter, ValMeter, UnlabelMeter
 from timesformer.utils.multigrid import MultigridSchedule
 from timesformer.utils.ema import ModelEma
-from .soc_utils import consistency_loss_soc, kmeans
+from .asn_utils import consistency_loss_asn, kmeans
 from timm.data import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
@@ -107,17 +107,6 @@ def train_epoch(
 
         loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 
-        flops, params = profile(model, inputs=[inputs])
-        # flops, params = 0, 0
-        # for inpu in inputs:
-        #    print("inputs.shape: ", inpu.shape)
-        #    flop, param = profile(model, inputs=[inpu])
-        #    print('FLOP = ' + str(flop/1000**3) + 'G')
-        #    print('Param = ' + str(param/1000**2) + 'M')
-        #    flops += flop
-        #    params += param
-        print('FLOPs = ' + str(flops/1000**3) + 'G')
-        print('Params = ' + str(params/1000**2) + 'M')
 
         if cfg.DETECTION.ENABLE:
             preds = model(inputs, meta["boxes"])
@@ -240,7 +229,7 @@ def get_mask(max_prob, max_std):
 
 def ssl_train_epoch(
         train_loader, unlabel_loader, model, model_ema, optimizer, optimizer_ema, unlabel_meter, cur_epoch, cfg,
-        soc_state, writer=None
+        asn_state, writer=None
 ):
     """
     Perform the video training for one epoch.
@@ -337,8 +326,6 @@ def ssl_train_epoch(
                 strong_t = strong_tensor.clone()
             strong_temporal.append(strong_t)
             strong[i] = F.dropout2d(strong_t, 0.2)
-        # for i, x in enumerate(strong):
-        #     print(i, x.shape,'strong2')
         student = model(strong)
         for i in range(len(strong)):
             idx = torch.randperm(strong[i].size(0))
@@ -369,7 +356,6 @@ def ssl_train_epoch(
         # mask = get_mask(max_probs, max_std)
         # mask2 = get_mask(max_probs2, max_std2)
         # mask_mix = mask_ratio * mask + (1 - mask_ratio) * mask2
-        # # soc
         # with torch.no_grad():
         #     if model_ema:
         #         teacher = model_ema.ema(weak).detach()
@@ -378,17 +364,17 @@ def ssl_train_epoch(
         #         teacher = model(weak).detach()
         #         pseudo_label = F.softmax(teacher, dim=-1)
 
-        label_matrix = soc_state["label_matrix"]
-        label_bank = soc_state["label_bank"]
-        centroids = soc_state["centroids"]
-        label_dics = soc_state["label_dics"]
-        clusters = soc_state["clusters"]
-        label_count = soc_state["label_count"]
-        num_classes = cfg.SOC.NUM_CLASSES
-        alpha = cfg.SOC.ALPHA
-        C_lower = cfg.SOC.C_LOWER
-        num_eval_iter = cfg.SOC.NUM_EVAL_ITER
-        N = cfg.SOC.N
+        label_matrix = asn_state["label_matrix"]
+        label_bank = asn_state["label_bank"]
+        centroids = asn_state["centroids"]
+        label_dics = asn_state["label_dics"]
+        clusters = asn_state["clusters"]
+        label_count = asn_state["label_count"]
+        num_classes = cfg.ASN.NUM_CLASSES
+        alpha = cfg.ASN.ALPHA
+        C_lower = cfg.ASN.C_LOWER
+        num_eval_iter = cfg.ASN.NUM_EVAL_ITER
+        N = cfg.ASN.N
         centroids = centroids
         global_iter = cur_epoch * data_size + cur_iter
         it = global_iter
@@ -410,7 +396,7 @@ def ssl_train_epoch(
         label_count = next_label_count
         ###############
         if cur_iter % 500 == 0:
-            save_dir = os.path.join(cfg.OUTPUT_DIR, "soc_vis")
+            save_dir = os.path.join(cfg.OUTPUT_DIR, "asn_vis")
             os.makedirs(save_dir, exist_ok=True)
 
             # [K, K, N] -> [K, K]
@@ -465,25 +451,10 @@ def ssl_train_epoch(
         loss_mix = (torch.mean(loss_l2(student_mix, y_label), dim=1)* mask_mix).mean()
         loss_un = (loss_unlabel(student, targets_u) * mask).mean()
         loss_label = loss_fun(preds, labels)
-        cos_loss = consistency_loss_soc(pseudo_label, student, label_dics, clusters, alpha,
+        cos_loss = consistency_loss_asn(pseudo_label, student, label_dics, clusters, alpha,
                                         num_classes)
 
-        loss = loss_label + ratio * (loss_un * cfg.TRAIN.GAMMA1 + loss_mix * cfg.TRAIN.GAMMA2)+ 0.1 * cos_loss
-        # SOC_WARM = cfg.TRAIN.WARM_EPOCH + 5
-        #
-        # if cur_epoch < SOC_WARM:
-        #     soc_weight = 0.0
-        # else:
-        #     # 平滑增长（推荐）
-        #     soc_weight = min(0.1, 0.1 * (cur_epoch - SOC_WARM) / 10)
-
-        # ===================== 【改动4：降低权重】 =====================
-        #soc_weight = 0.1
-        # loss = loss_label \
-        #        + ratio * (loss_un * cfg.TRAIN.GAMMA1 + loss_mix * cfg.TRAIN.GAMMA2) \
-        #        + soc_weight * cos_loss
-
-        #loss = loss_label + ratio * (loss_un + soc_weight * cos_loss)
+        loss = loss_label + 0.5 * loss_un + 0.5 * cos_loss
         # check Nan Loss.
         misc.check_nan_losses(loss)
 
@@ -584,15 +555,14 @@ def ssl_train_epoch(
     # Log epoch stats.
     unlabel_meter.log_epoch_stats(cur_epoch)
     #####################
-    soc_state["label_matrix"] = label_matrix
-    soc_state["label_bank"] = label_bank
-    soc_state["centroids"] = centroids
-    soc_state["label_dics"] = label_dics
-    soc_state["clusters"] = clusters
-    soc_state["label_count"] = label_count
+    asn_state["label_matrix"] = label_matrix
+    asn_state["label_bank"] = label_bank
+    asn_state["centroids"] = centroids
+    asn_state["label_dics"] = label_dics
+    asn_state["clusters"] = clusters
+    asn_state["label_count"] = label_count
     ########################
     unlabel_meter.reset()
-    #print(soc_state)
 
 @torch.no_grad()
 def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
@@ -925,14 +895,13 @@ def train(cfg):
     # set ema_model
     model_ema = ModelEma(model, decay=cfg.TRAIN.EMA)
 
-    # ====== soc initial ======
-    num_classes = cfg.SOC.NUM_CLASSES
-    alpha = cfg.SOC.ALPHA
+    # ====== asn initial ======
+    num_classes = cfg.ASN.NUM_CLASSES
+    alpha = cfg.ASN.ALPHA
     C = round(num_classes / alpha) + 1
-    C_lower = cfg.SOC.C_LOWER
-    N = cfg.SOC.N
-    print(N, 'N')
-    soc_state = {
+    C_lower = cfg.ASN.C_LOWER
+    N = cfg.ASN.N
+    asn_state = {
         "label_matrix": torch.zeros(num_classes, num_classes, N),
         "label_bank": {},
         "centroids": [
@@ -982,7 +951,7 @@ def train(cfg):
         # Train for one epoch.
         ssl_train_epoch(
             train_loader, unlabel_loader, model, model_ema, optimizer, optimizer_ema, unlabel_meter, cur_epoch, cfg,
-             soc_state, writer
+             asn_state, writer
         )
         if (cur_epoch + 1) % 5 == 0:
             is_checkp_epoch = True
