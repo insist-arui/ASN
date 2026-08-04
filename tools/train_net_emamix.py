@@ -323,7 +323,6 @@ def ssl_train_epoch(
             strong_resort = strong_temporal[i][idx, :]
             strong[i] = torch.cat([strong[i], strong_resort], dim=0)
 
-        # Teacher predict for 10 times.
         model.eval()
         pseudo_label = []
         with torch.no_grad():
