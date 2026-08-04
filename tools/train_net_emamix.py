@@ -228,7 +228,7 @@ def get_mask(max_prob, max_std):
 
 
 def ssl_train_epoch(
-        train_loader, unlabel_loader, model, model_ema, optimizer, optimizer_ema, unlabel_meter, cur_epoch, cfg,
+        train_loader, unlabel_loader, model, model_ema, optimizer, unlabel_meter, cur_epoch, cfg,
         asn_state, writer=None
 ):
     """
@@ -262,11 +262,6 @@ def ssl_train_epoch(
 
     cur_global_batch_size = cfg.NUM_SHARDS * cfg.TRAIN.BATCH_SIZE
     num_iters = cfg.GLOBAL_BATCH_SIZE // cur_global_batch_size
-
-    ratio = math.sin(
-        0.5 * math.pi * (cur_epoch + 1 - cfg.TRAIN.WARM_EPOCH) / (cfg.SOLVER.MAX_EPOCH - cfg.TRAIN.WARM_EPOCH))
-
-    # probs_list = []
 
     train_iter = iter(train_loader)
 
@@ -305,14 +300,10 @@ def ssl_train_epoch(
         unlabel_meter.data_toc()
         loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
         loss_unlabel = torch.nn.CrossEntropyLoss(reduction="none")
-        loss_l2 = torch.nn.MSELoss(reduction="none")
-
         if cfg.DETECTION.ENABLE:
             preds = model(inputs, meta["boxes"])
         else:
             preds = model(inputs)
-        # for i, x in enumerate(strong):
-        #     print(i, x.shape, 'strong1')
         # Video reverse.
         strong_temporal = []
         for i in range(len(strong)):
@@ -347,23 +338,9 @@ def ssl_train_epoch(
         pseudo_label = torch.stack(pseudo_label)
         probs_std = torch.std(pseudo_label, dim=0)
         pseudo_label = torch.mean(pseudo_label, dim=0)
-        #max_probs, targets_u = torch.max(pseudo_label, dim=-1)
         max_probs, max_idx = torch.max(pseudo_label, dim=-1)
         targets_u = max_idx
         max_std = probs_std.gather(1, targets_u.view(-1, 1)).squeeze(1)
-        max_probs2 = max_probs[idx]
-        max_std2 = max_std[idx]
-        # mask = get_mask(max_probs, max_std)
-        # mask2 = get_mask(max_probs2, max_std2)
-        # mask_mix = mask_ratio * mask + (1 - mask_ratio) * mask2
-        # with torch.no_grad():
-        #     if model_ema:
-        #         teacher = model_ema.ema(weak).detach()
-        #         pseudo_label = F.softmax(teacher, dim=-1)
-        #     else:
-        #         teacher = model(weak).detach()
-        #         pseudo_label = F.softmax(teacher, dim=-1)
-
         label_matrix = asn_state["label_matrix"]
         label_bank = asn_state["label_bank"]
         centroids = asn_state["centroids"]
@@ -435,20 +412,12 @@ def ssl_train_epoch(
             tubemask = tubemask[None].repeat(teacher.size(0), axis=0)
             tubemask = torch.Tensor(tubemask).cuda()
             tubemask_list.append(tubemask)
-        student_mix = model(strong, tubemask_list)
 
         pseudo = torch.zeros(teacher.size(0), teacher.size(-1)).cuda()
         mask = get_mask(max_probs, max_std)
-        mask2 = get_mask(max_probs2, max_std2)
-        mask_mix = mask_ratio * mask + (1 - mask_ratio) * mask2
         for i in range(teacher.size(0)):
             pseudo[i] = pseudo_label[i]
-        y_1 = pseudo
-        y_2 = pseudo[idx, :]
-        y_label = mask_ratio * y_1 + (1 - mask_ratio) * y_2
-
         # Compute the loss.
-        loss_mix = (torch.mean(loss_l2(student_mix, y_label), dim=1)* mask_mix).mean()
         loss_un = (loss_unlabel(student, targets_u) * mask).mean()
         loss_label = loss_fun(preds, labels)
         cos_loss = consistency_loss_asn(pseudo_label, student, label_dics, clusters, alpha,
@@ -888,9 +857,6 @@ def train(cfg):
         # Evaluate the model on validation set.
         if is_eval_epoch:
             eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer)
-
-    # set ema_model
-  #  model_ema = ModelEma(model, decay=cfg.TRAIN.EMA)
 
     # set ema_model
     model_ema = ModelEma(model, decay=cfg.TRAIN.EMA)
