@@ -810,12 +810,12 @@ _C.DEMO.COMMON_CLASS_NAMES = [
 # Slow-motion rate for the visualization. The visualized portions of the
 # video will be played `_C.DEMO.SLOWMO` times slower than usual speed.
 _C.DEMO.SLOWMO = 1
-_C.SOC = CN()
-_C.SOC.NUM_CLASSES = 35
-_C.SOC.ALPHA = 5
-_C.SOC.C_LOWER = 1
-_C.SOC.NUM_EVAL_ITER = 20
-_C.SOC.N = 512
+_C.ASN = CN()
+_C.ASN.NUM_CLASSES = 35
+_C.ASN.ALPHA = 5
+_C.ASN.C_LOWER = 1
+_C.ASN.NUM_EVAL_ITER = 20
+_C.ASN.N = 512
 
 def _assert_and_infer_cfg(cfg):
     # BN assertions.
