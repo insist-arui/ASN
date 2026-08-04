@@ -1,4 +1,3 @@
-Our codebase is built upon SeFAR. We sincerely thank the authors for their valuable work.
 # ASN
 # Installation
 
