@@ -104,7 +104,7 @@ def kmeans_reverse(dataSet, k, centroids):
     return dic, cluster, newCentroids
 
 
-def consistency_loss_soc(logits_w, logits_s, label_dics, clusters, alpha, num_classes):
+def consistency_loss_asn(logits_w, logits_s, label_dics, clusters, alpha, num_classes):
     pseudo_label = logits_w
     max_probs, max_idx = torch.max(logits_w, dim=-1)
     num_cluster = round(num_classes / alpha)
@@ -145,7 +145,7 @@ def consistency_loss_soc(logits_w, logits_s, label_dics, clusters, alpha, num_cl
     loss_super = ce_loss(logits_s, pseudo_label, use_hard_labels=False, reduction='none')
     return loss_super.mean()
 
-# def consistency_loss_soc(logits_w, logits_s, label_dics, clusters, alpha, num_classes):
+# def consistency_loss_asn(logits_w, logits_s, label_dics, clusters, alpha, num_classes):
 #     logits_w = logits_w.detach()
 #
 #     pseudo_label = torch.softmax(logits_w, dim=-1)
